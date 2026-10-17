@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>{{ .Title }}</title>
+    <style>
+{{ .CSS }}
+      .markdown-body h1 {
+        color: blue
+      }
+    </style>
+
+  </head>
+  <body>
+    <div class="page">
+    {{- if .TOC }}
+      <nav class="toc">
+        <p class="toc-title">Contents</p>
+        {{ .TOC }}
+      </nav>
+    {{- end }}
+      <article class="markdown-body">
+      {{ .Body }}
+      </article>
+    </div>
+  </body>
+</html>

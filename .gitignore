@@ -1,0 +1,5 @@
+# the built binary
+/mdp
+
+# PDFs made while trying mdp out
+*.pdf
