@@ -15,6 +15,7 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 )
 
+// defaultStyle is the default Chroma syntax highlighting theme
 const defaultStyle = "github"
 
 // pageCSS styles the page like GitHub, in light colors; darkCSS overrides
@@ -113,8 +114,9 @@ func highlightCSS(name string) (string, error) {
 // chromaSelector matches the start of each selector in Chroma's CSS
 var chromaSelector = regexp.MustCompile(`(^|[\s,])\.(chroma|bg)\b`)
 
-// scopeCSS limits Chroma CSS to pages in theme th whose code style menu is
-// set to id
+// scopeCSS limits Chroma CSS to pages in theme th whose code style menu is set to id.
+// By prefixing selectors with root attribute selectors, multiple syntax themes can be
+// embedded in one page without their class rules colliding.
 func scopeCSS(css, id string, th theme) string {
 	return chromaSelector.ReplaceAllString(css,
 		fmt.Sprintf(`${1}:root[data-theme=%q][data-code-style=%q] .$2`, th, id))

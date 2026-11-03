@@ -1,18 +1,17 @@
 package main
 
 import (
-	"bytes"         // to manipulate raw byte data
-	"image"         // to build a test image
-	"image/png"     // to encode it
-	"os"            // to read and delete files
-	"path/filepath" // to build paths in temp dirs
-
-	"strings" // to TrimSpace our mockStdOut
-	"testing" // used by all Go tests
+	"bytes"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 // We are using the "golden files" approach where the expected results are
-// saved into files that are loading during the tests to validate output.
+// saved into files that are loaded during the tests to validate output.
 // `testdata` is a special directory that is ignored by go build tools.
 const (
 	inputFile      = "./testdata/test1.md"
@@ -52,6 +51,7 @@ func TestRun(t *testing.T) {
 	}
 
 	resultFile := strings.TrimSpace(mockStdOut.String())
+	defer os.Remove(resultFile)
 
 	result, err := os.ReadFile(resultFile)
 	if err != nil {
@@ -64,12 +64,10 @@ func TestRun(t *testing.T) {
 	}
 
 	if !bytes.Equal(expected, result) {
-		t.Logf("golden:|n%s|n", expected)
-		t.Logf("result:|n%s|n", result)
+		t.Logf("golden:\n%s\n", expected)
+		t.Logf("result:\n%s\n", result)
 		t.Error("Result content does not match golden file")
 	}
-
-	os.Remove(resultFile)
 }
 
 func TestRunWithTemplate(t *testing.T) {
@@ -80,6 +78,7 @@ func TestRunWithTemplate(t *testing.T) {
 	}
 
 	resultFile := strings.TrimSpace(mockStdOut.String())
+	defer os.Remove(resultFile)
 
 	result, err := os.ReadFile(resultFile)
 	if err != nil {
@@ -92,12 +91,10 @@ func TestRunWithTemplate(t *testing.T) {
 	}
 
 	if !bytes.Equal(expected, result) {
-		t.Logf("golden:|n%s|n", expected)
-		t.Logf("result:|n%s|n", result)
+		t.Logf("golden:\n%s\n", expected)
+		t.Logf("result:\n%s\n", result)
 		t.Error("Result content does not match golden file")
 	}
-
-	os.Remove(resultFile)
 }
 
 func TestParseContentHighlightsCode(t *testing.T) {

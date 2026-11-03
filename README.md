@@ -102,10 +102,24 @@ over to make room for it; on narrow ones it covers the page.
 
 ### Templates
 
-A template gets `{{ .Title }}` (see above), `{{ .CSS }}` (the GitHub and
-highlighting styles), `{{ .TOC }}`, `{{ .TOCOpen }}`, and `{{ .Body }}`.
+A custom template receives the following fields:
+* `{{ .Title }}`: Page title (first `#` heading or file name)
+* `{{ .CSS }}`: Combined GitHub styles and Chroma syntax highlighting rules
+* `{{ .TOC }}`: Rendered HTML for the table of contents
+* `{{ .TOCOpen }}`: Whether `--toc` asked to start with the table of contents open
+* `{{ .Body }}`: The sanitized HTML article
+* `{{ .KaTeXCSS }}`, `{{ .KaTeX }}`: Styles and script for math rendering (when math is present)
+* `{{ .Mermaid }}`: Script for rendering Mermaid diagrams (when diagrams are present)
+
 Wrap the body in `<article class="markdown-body">` for the styles to apply.
-See `template-fmt.html.tmpl` for an example.
+See `template-fmt.html.tmpl` for a minimal example.
+
+> [!NOTE]
+> Custom templates replace the default page entirely. Bare-bones templates that
+> omit `{{ .KaTeX }}` or `{{ .Mermaid }}` will not render math formulas or diagrams,
+> and won't include the top bar, search, or theme switcher unless implemented
+> in the template. In watch mode (`-w`), the live-reload script is automatically
+> appended before `</body>` (or at the end of the file if omitted).
 
 ## Development
 
@@ -122,3 +136,22 @@ regenerate them and read the diff:
 ```sh
 go test -run TestGolden -update
 ```
+
+### File Responsibilities
+
+The codebase uses a flat `package main` structure, where each file covers a specific domain:
+
+* **`main.go`**: Command-line flag parsing with `pflag`, validation, execution routing (`run` vs `serve`), and OS browser preview launcher.
+* **`render.go`**: Core Markdown-to-HTML rendering pipeline via Goldmark, HTML sanitization via Bluemonday UGC policy, heading ID slug generation, and TOC tree building.
+* **`github.go`**: Goldmark AST extensions for GitHub additions: math syntax (`$…$`, `$$…$$`), `math` and `mermaid` fenced block transformers, alert callouts (`> [!NOTE]`), tag filtering, and YAML front matter tables.
+* **`links.go`**: Streaming HTML tokenizer that rewrites relative links and inlines local images as base64 data URIs so pages are portable and self-contained.
+* **`style.go`**: Chroma syntax highlighting, light and dark theme pairings, and dynamic CSS selector scoping (`scopeCSS`) to prevent style collisions.
+* **`watch.go`**: Live-reload server using Server-Sent Events (SSE) and file stat polling, serving linked files across the source directory.
+* **`pdf.go`**: Headless Chrome driver for printing PDFs with heading outlines and platform dark mode detection.
+* **`assets.go`**: Embedded vendor libraries (KaTeX and Mermaid) via `embed.FS`, with base64-inlined fonts for offline rendering.
+* **`page.html.tmpl`**: Default HTML template containing the top bar, slide-out table of contents, client-side search, and theme switching scripts.
+* **`github.css` / `github-dark.css`**: GitHub-like stylesheets embedded into the page for light and dark modes.
+* **`golden_test.go`**: Golden test runner that extracts `<title>`, `<nav>`, and `<article>` to verify output against `testdata/golden/` without breaking on CSS changes.
+* **`chrome_test.go`**: Integration tests verifying that KaTeX math and Mermaid diagrams render cleanly in headless Chrome.
+* **`watch_test.go`**: Tests for HTTP live-reload event streaming and directory serving.
+* **`main_test.go`**: CLI flag parsing tests, end-to-end execution tests, and legacy book regression fixtures.

@@ -35,6 +35,9 @@ type watcher struct {
 	interval time.Duration
 }
 
+// newWatcher creates a watcher rooted in the directory of filename.
+// opts.served is enabled so relative links between markdown files are left
+// for the server to resolve rather than converted to absolute file:// URLs.
 func newWatcher(filename string, opts options) *watcher {
 	opts.served = true
 	return &watcher{
@@ -52,6 +55,7 @@ func serve(filename string, opts options, out io.Writer, skipPreview bool) error
 		return err
 	}
 
+	// Port :0 tells the OS kernel to allocate an available ephemeral port
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -60,6 +64,7 @@ func serve(filename string, opts options, out io.Writer, skipPreview bool) error
 	url := "http://" + ln.Addr().String() + "/"
 	fmt.Fprintln(out, url)
 
+	// Launch preview in a separate goroutine so it opens while http.Serve blocks below
 	if !skipPreview {
 		go func() {
 			if err := preview(url); err != nil {
@@ -71,6 +76,7 @@ func serve(filename string, opts options, out io.Writer, skipPreview bool) error
 	return http.Serve(ln, newWatcher(filename, opts).handler())
 }
 
+// handler returns an http.Handler that routes /events for SSE and / for page serving
 func (w *watcher) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /events", w.serveEvents)
@@ -87,6 +93,7 @@ func (w *watcher) resolve(urlPath string) string {
 	return filepath.Join(w.root, filepath.FromSlash(path.Clean("/"+urlPath)))
 }
 
+// isMarkdown reports whether name has a recognized Markdown extension
 func isMarkdown(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".md", ".markdown", ".mdown", ".mkd":
@@ -114,6 +121,7 @@ func (w *watcher) serveFile(rw http.ResponseWriter, r *http.Request) {
 	rw.Write(page)
 }
 
+// render reads, parses, and injects the live-reload script into the Markdown file
 func (w *watcher) render(name string) ([]byte, error) {
 	input, err := os.ReadFile(name)
 	if err != nil {
@@ -137,7 +145,8 @@ func injectScript(page []byte) []byte {
 }
 
 // serveEvents streams a server-sent "reload" event each time the file at the
-// ?path= URL path changes: its modification time or size
+// ?path= URL path changes: its modification time or size.
+// http.Flusher pushes chunks immediately down the open connection.
 func (w *watcher) serveEvents(rw http.ResponseWriter, r *http.Request) {
 	flusher, ok := rw.(http.Flusher)
 	if !ok {

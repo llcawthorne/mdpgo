@@ -22,6 +22,7 @@ import (
 // githubExtras adds math and the blocks for math and Mermaid diagrams
 type githubExtras struct{}
 
+// Extend implements goldmark.Extender to register math parsers, block transformers, and renderers.
 func (githubExtras) Extend(m goldmark.Markdown) {
 	m.Parser().AddOptions(
 		parser.WithInlineParsers(util.Prioritized(mathParser{}, 150)),
@@ -33,6 +34,7 @@ func (githubExtras) Extend(m goldmark.Markdown) {
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(util.Prioritized(extrasRenderer{}, 100)))
 }
 
+// Node kinds for custom AST elements representing math and diagrams
 var (
 	kindMath      = ast.NewNodeKind("Math")
 	kindMathBlock = ast.NewNodeKind("MathBlock")
@@ -46,8 +48,10 @@ type mathNode struct {
 	display bool
 }
 
+// Kind implements ast.Node.
 func (n *mathNode) Kind() ast.NodeKind { return kindMath }
 
+// Dump implements ast.Node for debugging the syntax tree.
 func (n *mathNode) Dump(source []byte, level int) {
 	ast.DumpHelper(n, source, level, map[string]string{"TeX": string(n.tex)}, nil)
 }
@@ -60,8 +64,10 @@ type rawBlock struct {
 	text []byte
 }
 
+// Kind implements ast.Node.
 func (n *rawBlock) Kind() ast.NodeKind { return n.kind }
 
+// Dump implements ast.Node for debugging the syntax tree.
 func (n *rawBlock) Dump(source []byte, level int) {
 	ast.DumpHelper(n, source, level, map[string]string{"Text": string(n.text)}, nil)
 }
@@ -73,8 +79,11 @@ func (n *rawBlock) Dump(source []byte, level int) {
 // over lines in a paragraph.
 type mathParser struct{}
 
+// Trigger returns the bytes that start a potential math span.
 func (mathParser) Trigger() []byte { return []byte{'$'} }
 
+// Parse scans for a closing math delimiter and returns a mathNode, or nil if
+// the $ is ordinary text.
 func (mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context) ast.Node {
 	line, _ := block.PeekLine()
 	open, close, display := "$", "$", false
@@ -87,13 +96,15 @@ func (mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context) a
 		return nil
 	}
 
+	// Save the reader's current position so we can backtrack if this turns out
+	// not to be valid math syntax (e.g. currency like "$5 and $10").
 	startLine, startPos := block.Position()
 	block.Advance(len(open))
 	var tex []byte
 	for {
 		line, _ := block.PeekLine()
 		if line == nil {
-			block.SetPosition(startLine, startPos)
+			block.SetPosition(startLine, startPos) // backtrack to let other parsers handle the text
 			return nil
 		}
 		if end := closingDelim(line, close, open == "$"); end >= 0 {
@@ -141,12 +152,16 @@ func closingDelim(line []byte, close string, strict bool) int {
 	return -1
 }
 
+// isSpace reports whether byte c is an ASCII whitespace character
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
 // specialBlocks turns ```math and ```mermaid code blocks into blocks that are
 // rendered in the page, as GitHub does
 type specialBlocks struct{}
 
+// Transform implements parser.ASTTransformer, collecting math and mermaid code
+// blocks during traversal and replacing them afterward so the walk isn't
+// disrupted.
 func (specialBlocks) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
 	var found []*ast.FencedCodeBlock
@@ -182,12 +197,15 @@ var alertTypes = map[string]string{
 	"CAUTION":   "Caution",
 }
 
+// alertMarker matches an alert type indicator on the first line of a blockquote (e.g. "[!NOTE]")
 var alertMarker = regexp.MustCompile(`^\[!([A-Za-z]+)\]$`)
 
 // alerts turns blockquotes that start with an alert marker into alerts: the
 // marker becomes a title, and a class gives the alert its color and icon
 type alerts struct{}
 
+// Transform implements parser.ASTTransformer, rewriting blockquotes that start
+// with a recognized [!TYPE] marker into styled alert blocks.
 func (alerts) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -237,6 +255,8 @@ func (alerts) Transform(doc *ast.Document, reader text.Reader, pc parser.Context
 // page's scripts find and render
 type extrasRenderer struct{}
 
+// RegisterFuncs implements renderer.NodeRenderer, registering HTML writers for
+// math and Mermaid AST nodes.
 func (extrasRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(kindMath, func(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
@@ -283,6 +303,7 @@ func usesKinds(doc ast.Node) (math, mermaid bool) {
 // escaped by then, so only raw HTML is affected.
 var tagFilter = regexp.MustCompile(`(?i)<(/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext))\b`)
 
+// filterTags escapes the raw HTML tags disallowed by GitHub (such as <script> and <style>) so they display as text
 func filterTags(page []byte) []byte {
 	return tagFilter.ReplaceAll(page, []byte("&lt;$1"))
 }
@@ -306,6 +327,8 @@ func frontMatterTable(items yaml.MapSlice) string {
 	return b.String()
 }
 
+// frontMatterValue renders a front matter YAML value to an HTML string,
+// recursively formatting nested maps and lists as tables
 func frontMatterValue(v any) string {
 	switch v := v.(type) {
 	case yaml.MapSlice:

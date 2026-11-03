@@ -1,3 +1,5 @@
+// mdp renders Markdown files as GitHub-styled HTML pages or PDFs and opens
+// them in a browser.
 package main
 
 import (
@@ -107,11 +109,9 @@ func parseArgs(args []string, stderr io.Writer) (config, error) {
 	return cfg, nil
 }
 
-// Unlike main, run returns a value that can be tested
-// It takes the config and an output that satisfies the Writer interface
-// This let's us output to os.Stdout normally but to bytes.Buffer in tests
+// run executes the preview or PDF generation pipeline for the given config.
+// out receives the resulting file path (normally os.Stdout, or bytes.Buffer in tests).
 func run(cfg config, out io.Writer) error {
-	// Read all the data from the input file and check for errors
 	input, err := os.ReadFile(cfg.filename)
 	if err != nil {
 		return err
@@ -132,7 +132,6 @@ func run(cfg config, out io.Writer) error {
 
 	outName := cfg.output
 	if outName == "" {
-		// Create temporary file and check for errors
 		temp, err := os.CreateTemp("", "mdp*.html")
 		if err != nil {
 			return err
@@ -145,7 +144,7 @@ func run(cfg config, out io.Writer) error {
 
 	fmt.Fprintln(out, outName)
 
-	if err := saveHTML(outName, htmlData); err != nil {
+	if err := os.WriteFile(outName, htmlData, 0644); err != nil {
 		return err
 	}
 
@@ -160,17 +159,11 @@ func run(cfg config, out io.Writer) error {
 	return preview(outName)
 }
 
-func saveHTML(outFname string, data []byte) error {
-	// Write the bytes to the file
-	return os.WriteFile(outFname, data, 0644)
-}
-
 // preview opens fname, a file path or URL, with the OS default program
 func preview(fname string) error {
-	cName := ""
-	cParams := []string{}
+	var cName string
+	var cParams []string
 
-	// Define executable based on OS
 	switch runtime.GOOS {
 	case "linux":
 		cName = "xdg-open"
@@ -180,21 +173,13 @@ func preview(fname string) error {
 	case "darwin":
 		cName = "open"
 	default:
-		return fmt.Errorf("OS not supported")
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	// Append filename to parameters slice
 	cParams = append(cParams, fname)
+	err := exec.Command(cName, cParams...).Run()
 
-	// Locate executable in PATH
-	cPath, err := exec.LookPath(cName)
-	if err != nil {
-		return err
-	}
-	// Open the file using default program
-	err = exec.Command(cPath, cParams...).Run()
-
-	// Make sure it isn't deleted before viewing
+	// Give the browser time to open a temp file before run's defer deletes it
 	time.Sleep(2 * time.Second)
 	return err
 }

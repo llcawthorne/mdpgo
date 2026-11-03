@@ -42,7 +42,7 @@ type options struct {
 	served     bool   // the page is served, so relative links are left for the server
 }
 
-// content type represents the HTML content to add into the template
+// content represents the template data model passed to page.html.tmpl or an alternate template
 type content struct {
 	Title     string
 	Theme     theme // starting colors: auto, light, or dark
@@ -122,13 +122,12 @@ var policy = func() *bluemonday.Policy {
 // where input came from: it's the title if there's no top-level heading, and
 // the folder that relative image paths are read from.
 func parseContent(input []byte, filename string, opts options) ([]byte, error) {
-	// Parse the markdown file through goldmark and bluemonday
-	// to generate a valid and safe HTML
 	ctx := parser.NewContext()
 	doc := md.Parser().Parse(text.NewReader(input), parser.WithContext(ctx))
 	addHeadingIDs(doc, input)
 
 	var output bytes.Buffer
+	// TryGetItems returns a yaml.MapSlice so keys keep their order in the file
 	switch items, err := meta.TryGetItems(ctx); {
 	case err != nil:
 		fmt.Fprintf(&output, "<p><strong>Error in front matter:</strong> %s</p>\n",
@@ -153,20 +152,16 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 		return nil, err
 	}
 
-	// Parse the contents of the defaultTemplate into a new Template
-	t, err := template.New("mdp").Parse(defaultTemplate)
+	var t *template.Template
+	if opts.template != "" {
+		t, err = template.ParseFiles(opts.template)
+	} else {
+		t, err = template.New("mdp").Parse(defaultTemplate)
+	}
 	if err != nil {
 		return nil, err
 	}
-	// if user provided alternate template file, replace template
-	if opts.template != "" {
-		t, err = template.ParseFiles(opts.template)
-		if err != nil {
-			return nil, err
-		}
-	}
 
-	// Instantiate the content type, adding the title and body
 	c := content{
 		Title:     title(doc, input, filename),
 		Theme:     cmp.Or(opts.theme, auto),
@@ -186,15 +181,12 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 		}
 	}
 
-	// Create a buffer of bytes to write to a file
 	var buffer bytes.Buffer
-
-	// Execute the template with the content type
 	if err := t.Execute(&buffer, c); err != nil {
 		return nil, err
 	}
 
-	return buffer.Bytes(), err
+	return buffer.Bytes(), nil
 }
 
 // title returns the text of the first top-level (#) heading, or the base of
@@ -301,6 +293,9 @@ func renderTOC(doc ast.Node, source []byte) ([]byte, error) {
 	return policy.SanitizeBytes(buf.Bytes()), nil
 }
 
+// countH1 walks the AST and returns the number of top-level (#) headings in the document.
+// ast.Walk calls the callback on both entering and leaving each node; checking entering
+// ensures each heading is counted only once.
 func countH1(doc ast.Node) int {
 	n := 0
 	ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
