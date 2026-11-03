@@ -1,4 +1,4 @@
-module github.com/llcawthorne/mdp
+module github.com/llcawthorne/mdpgo
 
 go 1.26.3
 
