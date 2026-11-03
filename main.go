@@ -1,5 +1,12 @@
 // mdp renders Markdown files as GitHub-styled HTML pages or PDFs and opens
 // them in a browser.
+//
+// File responsibilities (main.go):
+//   - Entry point (main), CLI flag parsing and validation (parseArgs),
+//     one-shot execution pipeline (run), and launching the OS viewer (preview).
+//
+// All .go files in this directory declare `package main` and compile as a
+// single unit, sharing package-private (lowercase) identifiers without imports.
 package main
 
 import (
@@ -14,10 +21,17 @@ import (
 	"time"
 
 	"github.com/alecthomas/chroma/v2/styles"
+	// pflag is a drop-in replacement for the standard library's "flag" package
+	// that adds POSIX/GNU conventions (--long, combined -wd, flags after args).
 	flag "github.com/spf13/pflag"
 )
 
-// config is what the command line asks for
+// config is what the command line asks for.
+//
+// In Go, casing controls visibility (lowercase = package-private, Uppercase =
+// exported). `opts options` is stored inline by value rather than as a pointer,
+// and because all fields are comparable primitives, two `config` structs can be
+// compared directly with `==` in tests.
 type config struct {
 	filename    string
 	skipPreview bool
@@ -27,9 +41,15 @@ type config struct {
 	opts        options
 }
 
-// main simply parses flags and calls run, or serve to watch
+// main simply parses flags and calls run, or serve to watch.
+//
+// `os.Exit` terminates immediately without running `defer` statements, so Go
+// convention keeps `main` minimal and puts real work in functions returning
+// `error` (`parseArgs`, `serve`, `run`).
 func main() {
+	// os.Args[0] is the binary name itself.
 	cfg, err := parseArgs(os.Args[1:], os.Stderr)
+	// errors.Is unwraps error chains to check for a target error value.
 	if errors.Is(err, flag.ErrHelp) {
 		return
 	}
@@ -50,14 +70,21 @@ func main() {
 }
 
 // parseArgs reads the flags and the one file name from args, printing usage
-// to stderr when they don't make sense
+// to stderr when they don't make sense.
+//
+// Go interfaces are satisfied implicitly (no `implements` keyword). Accepting
+// `io.Writer` (`Write([]byte) (int, error)`) lets callers pass `os.Stderr` in
+// production and `&bytes.Buffer` in tests.
 func parseArgs(args []string, stderr io.Writer) (config, error) {
+	// `var cfg config` zero-initializes the struct ("" and false for all fields).
 	var cfg config
 	var forceDark, forceLight bool
 	var style, darkStyle string
 
 	fs := flag.NewFlagSet("mdp", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	// Go passes arguments by value, so pflag takes pointers (`&cfg.skipPreview`)
+	// to populate fields in place during `fs.Parse`.
 	fs.BoolVarP(&cfg.skipPreview, "skip", "s", false, "skip auto-preview; just print the file path or URL")
 	fs.BoolVarP(&cfg.opts.toc, "toc", "t", false, "open the table of contents")
 	fs.BoolVarP(&cfg.watch, "watch", "w", false, "watch the file and reload the preview when it changes")
@@ -81,6 +108,8 @@ func parseArgs(args []string, stderr io.Writer) (config, error) {
 		cfg.pdf = true
 	}
 
+	// A tagless `switch` acts as an `if / else if` chain. Go `switch` cases do
+	// not fall through unless `fallthrough` is written explicitly.
 	switch {
 	case fs.NArg() != 1:
 		fs.Usage()
@@ -117,6 +146,8 @@ func run(cfg config, out io.Writer) error {
 		return err
 	}
 
+	// Value assignment copies the struct, so mutating `opts.theme` doesn't
+	// affect `cfg.opts`.
 	opts := cfg.opts
 	if cfg.pdf {
 		opts.theme = pdfTheme(opts.theme)
@@ -153,6 +184,8 @@ func run(cfg config, out io.Writer) error {
 	}
 
 	if cfg.output == "" {
+		// `defer` is function-scoped (not block-scoped): `os.Remove(outName)`
+		// runs when `run` returns, after `preview(outName)` finishes.
 		defer os.Remove(outName)
 	}
 
@@ -173,9 +206,13 @@ func preview(fname string) error {
 	case "darwin":
 		cName = "open"
 	default:
+		// Go convention: error strings are lowercase and without trailing
+		// punctuation because they are often embedded inside outer errors.
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
+	// A `nil` slice (`var cParams []string`) is valid to pass to `append`
+	// without allocating an empty slice first.
 	cParams = append(cParams, fname)
 	err := exec.Command(cName, cParams...).Run()
 

@@ -1,8 +1,15 @@
+// File responsibilities (render.go):
+//   - Core Markdown-to-HTML rendering pipeline via Goldmark, HTML sanitization
+//     via Bluemonday UGC policy, GitHub-compatible heading ID slug generation,
+//     table of contents (TOC) generation, and HTML template execution.
 package main
 
 import (
 	"bytes"
 	"cmp"
+	// Blank import (`_`): unused imports are a compile error in Go. `_ "embed"`
+	// imports the package solely for its side effect so the compiler enables
+	// `//go:embed` directives below even though no `embed.*` symbol is referenced.
 	_ "embed"
 	"fmt"
 	"html/template"
@@ -27,7 +34,10 @@ import (
 )
 
 // defaultTemplate lays out the page: a top bar, the table of contents, and
-// the article
+// the article.
+//
+// `//go:embed` (note no space after `//`) is a compiler directive that bakes
+// `page.html.tmpl` directly into the binary at build time.
 //
 //go:embed page.html.tmpl
 var defaultTemplate string
@@ -42,7 +52,15 @@ type options struct {
 	served     bool   // the page is served, so relative links are left for the server
 }
 
-// content represents the template data model passed to page.html.tmpl or an alternate template
+// content represents the template data model passed to page.html.tmpl or an alternate template.
+//
+// Two Go-specific details here:
+//   1. Fields are Uppercase (exported) even though `content` is lowercase:
+//      `html/template` reads struct fields via reflection, and Go's `reflect`
+//      package refuses to read unexported fields across package boundaries.
+//   2. `template.CSS`, `template.HTML`, and `template.JS` are distinct defined
+//      types (`type HTML string`) in `html/template` that mark pre-sanitized
+//      strings as trusted so the template engine doesn't auto-escape them again.
 type content struct {
 	Title     string
 	Theme     theme // starting colors: auto, light, or dark
@@ -64,6 +82,10 @@ type content struct {
 // Fenced code blocks are highlighted with CSS classes (styled by stylesheet)
 // rather than inline styles, since the sanitizer strips style attributes.
 // Raw HTML is passed through, like on GitHub, for policy to make safe.
+//
+// Go idiom (Functional Options): since Go has no constructor overloading or
+// default arguments, configurable constructors accept variadic option closures
+// (`goldmark.WithRendererOptions(...)`, `goldmark.WithExtensions(...)`).
 var md = goldmark.New(
 	goldmark.WithRendererOptions(html.WithUnsafe()),
 	goldmark.WithExtensions(
@@ -85,7 +107,10 @@ var md = goldmark.New(
 )
 
 // policy sanitizes the rendered HTML, keeping what md adds, and the raw HTML
-// GitHub allows
+// GitHub allows.
+//
+// Initialized via an immediately-invoked anonymous function (`func() ... { ... }()`)—
+// Go's idiom for complex static initialization of a single package variable.
 var policy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	// keep the classes Chroma puts on highlighted code blocks
@@ -126,8 +151,11 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 	doc := md.Parser().Parse(text.NewReader(input), parser.WithContext(ctx))
 	addHeadingIDs(doc, input)
 
+	// `bytes.Buffer`'s zero value is an empty buffer ready to use without `new`.
 	var output bytes.Buffer
-	// TryGetItems returns a yaml.MapSlice so keys keep their order in the file
+	// TryGetItems returns a `yaml.MapSlice` (slice of key/value pairs) rather
+	// than a Go `map` (whose iteration order is randomized by the Go runtime),
+	// so keys stay in file order.
 	switch items, err := meta.TryGetItems(ctx); {
 	case err != nil:
 		fmt.Fprintf(&output, "<p><strong>Error in front matter:</strong> %s</p>\n",
@@ -135,6 +163,8 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 	default:
 		output.WriteString(frontMatterTable(items))
 	}
+	// `*bytes.Buffer` (pointer) implements `io.Writer`, not `bytes.Buffer`
+	// (value), because `Write` mutates the buffer—so we pass `&output`.
 	if err := md.Renderer().Render(&output, input, doc); err != nil {
 		return nil, err
 	}
@@ -163,7 +193,8 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 	}
 
 	c := content{
-		Title:     title(doc, input, filename),
+		Title: title(doc, input, filename),
+		// cmp.Or returns the first non-zero argument (non-"" string here).
 		Theme:     cmp.Or(opts.theme, auto),
 		CSS:       css,
 		Styles:    choices,
@@ -194,6 +225,8 @@ func parseContent(input []byte, filename string, opts options) ([]byte, error) {
 func title(doc ast.Node, source []byte, filename string) string {
 	var heading ast.Node
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		// "Comma-ok" type assertion: `h, ok := n.(*ast.Heading)` checks if interface
+		// `n` holds a `*ast.Heading` and narrows `h` without panicking on mismatch.
 		if h, ok := n.(*ast.Heading); ok && entering && h.Level == 1 {
 			heading = h
 			return ast.WalkStop, nil
@@ -218,6 +251,7 @@ func headingText(heading ast.Node, source []byte) string {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
+		// Type switch: `n` inside each `case` is narrowed to that concrete type.
 		switch n := n.(type) {
 		case *ast.Text:
 			b.Write(n.Value(source))
@@ -235,6 +269,9 @@ func headingText(heading ast.Node, source []byte) string {
 // ending in #heading-id, can link to it. The ids are made the way GitHub
 // makes them, so links written for GitHub work here too.
 func addHeadingIDs(doc ast.Node, source []byte) {
+	// Reading a missing key from a Go map returns the value type's zero value
+	// (`0` for `int`), so `seen[id] > 0` and `seen[id]++` work without
+	// `getOrDefault` or null checks.
 	seen := map[string]int{}
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if h, ok := n.(*ast.Heading); ok && entering {
@@ -257,6 +294,9 @@ func addHeadingIDs(doc ast.Node, source []byte) {
 // but letters in any language are kept
 func slug(text string) string {
 	var b strings.Builder
+	// Indexing a Go string (`s[i]`) yields raw UTF-8 bytes, whereas `range`
+	// over a string decodes UTF-8 and yields each Unicode code point as a
+	// `rune` (`int32`).
 	for _, r := range strings.ToLower(text) {
 		switch {
 		case r == ' ':

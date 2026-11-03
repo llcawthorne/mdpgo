@@ -1,3 +1,15 @@
+// File responsibilities (golden_test.go):
+//   - Golden file test runner that renders each `testdata/golden/*.md` input
+//     and compares the structural HTML (`<title>`, `<nav>`, `<article>`)
+//     against the `.html` file beside it, supporting `-update` to regenerate
+//     expected outputs.
+//
+// Go vs. Java note on `*_test.go` files:
+//   Files ending in `_test.go` are compiled ONLY by `go test` and are completely
+//   excluded from production builds (`go build` / `go install`), even though
+//   they live in the same directory and share `package main` (giving them direct
+//   access to unexported functions like `parseContent`). Likewise, the Go tool
+//   ignores any directory named `testdata`.
 package main
 
 import (
@@ -14,6 +26,12 @@ import (
 //	go test -run TestGolden -update
 //
 // Then read the diff before committing it.
+//
+// Go testing idiom (custom CLI flags in tests):
+//   Because `go test` compiles a standalone test binary that uses the standard
+//   library `flag` package for its own flags, registering `flag.Bool("update", ...)`
+//   in a test file automatically adds `-update` to `go test`! Note that
+//   `flag.Bool` returns a pointer (`*bool`), dereferenced below as `*update`.
 var update = flag.Bool("update", false, "rewrite golden files from current output")
 
 // TestGolden renders each testdata/golden/*.md and compares the parts that
@@ -30,6 +48,12 @@ func TestGolden(t *testing.T) {
 
 	for _, input := range inputs {
 		name := strings.TrimSuffix(filepath.Base(input), ".md")
+		// Subtests (`t.Run`): creates a named child test (e.g. `TestGolden/math`)
+		// that can be run in isolation via `go test -run TestGolden/math`.
+		// Unlike JUnit, where `assertEquals` throws an exception that aborts
+		// the test method immediately, Go distinguishes `t.Errorf` (log failure
+		// and keep running the rest of the test) from `t.Fatalf` (abort the
+		// current subtest immediately).
 		t.Run(name, func(t *testing.T) {
 			md, err := os.ReadFile(input)
 			if err != nil {
@@ -68,6 +92,10 @@ func TestGolden(t *testing.T) {
 // rendered page, one after another
 func markdownParts(page []byte) []byte {
 	var parts bytes.Buffer
+	// Notice `[][2]string`: a slice of fixed-size 2-element string arrays!
+	// In Go, `[2]string` is a fixed-length value-type array (2 strings side by
+	// side in memory with no slice header), making it a lightweight way to
+	// represent a pair of `(openTag, closeTag)` strings.
 	for _, tags := range [][2]string{
 		{"<title>", "</title>"},
 		{"<nav", "</nav>"},

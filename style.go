@@ -1,3 +1,7 @@
+// File responsibilities (style.go):
+//   - Embeds the light and dark GitHub page stylesheets, pairs Chroma syntax
+//     highlighting themes into light/dark families, and generates scoped CSS
+//     rules so users can switch themes and code styles live in the browser.
 package main
 
 import (
@@ -29,6 +33,11 @@ var (
 
 // theme picks the page's starting colors; auto follows the OS setting. The
 // top bar's button switches them.
+//
+// Go enum idiom (`type theme string`):
+//   Go has no `enum` keyword. Declaring a distinct defined type (`type theme string`)
+//   paired with a `const` block prevents passing an arbitrary `string` variable
+//   where a `theme` is expected, while still storing a plain string at runtime.
 type theme string
 
 const (
@@ -38,7 +47,12 @@ const (
 )
 
 // codeStyle is a choice in the page's code style menu, naming the Chroma
-// styles to use in light and dark mode
+// styles to use in light and dark mode.
+//
+// Notice the mixed field casing: `ID` and `Label` are Uppercase (exported) so
+// `html/template` can access `{{ .ID }}` and `{{ .Label }}` in `page.html.tmpl`,
+// whereas `light` and `dark` are lowercase (unexported) because only Go code
+// in this package needs them.
 type codeStyle struct {
 	ID, Label   string
 	light, dark string
@@ -59,6 +73,8 @@ func codeStyles(opts options) (choices []codeStyle, selected string) {
 	light := cmp.Or(opts.lightStyle, defaultLight)
 	dark := cmp.Or(opts.darkStyle, defaultDark)
 
+	// In `for _, s := range menuStyles`, `range` over a slice yields
+	// `(index, element)`. Using `_` ignores the index.
 	for _, s := range menuStyles {
 		if s.light == light && s.dark == dark {
 			return menuStyles, s.ID
@@ -70,6 +86,9 @@ func codeStyles(opts options) (choices []codeStyle, selected string) {
 		label = light + " / " + dark
 	}
 	custom := codeStyle{ID: "custom", Label: label, light: light, dark: dark}
+	// Prepending to a slice: `append([]codeStyle{custom}, menuStyles...)`
+	// allocates a new slice starting with `custom` and unpacks `menuStyles`
+	// after it, leaving the package-level `menuStyles` slice untouched.
 	return append([]codeStyle{custom}, menuStyles...), custom.ID
 }
 
@@ -111,7 +130,11 @@ func highlightCSS(name string) (string, error) {
 	return buf.String(), nil
 }
 
-// chromaSelector matches the start of each selector in Chroma's CSS
+// chromaSelector matches the start of each selector in Chroma's CSS.
+//
+// Go convention (`Must*` functions): standard library functions rarely panic;
+// those that do are prefixed with `Must` (like `regexp.MustCompile`) and are
+// meant for package-level initialization with constant patterns.
 var chromaSelector = regexp.MustCompile(`(^|[\s,])\.(chroma|bg)\b`)
 
 // scopeCSS limits Chroma CSS to pages in theme th whose code style menu is set to id.
@@ -161,6 +184,10 @@ var styleFamilies = [][]string{
 // both
 func stylesFor(name string) (light, dark string) {
 	for _, family := range styleFamilies {
+		// Switch with a short initializer (`switch i := slices.Index(...); { ... }`):
+		// combines an initializer statement (`i := ...`) with a boolean
+		// conditionless switch (`case i == 0:`, `case i > 0:`), scoping `i`
+		// tightly to the `switch` block.
 		switch i := slices.Index(family, name); {
 		case i == 0:
 			return name, family[1]

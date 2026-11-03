@@ -1,3 +1,8 @@
+// File responsibilities (github_test.go):
+//   - Unit tests for GitHub-specific Markdown extensions (`github.go`) and
+//     HTML link/image rewriting (`links.go`): inline/display math parsing edge
+//     cases, conditional KaTeX/Mermaid script inclusion, front matter error
+//     handling, link resolution, and raw HTML tag filtering.
 package main
 
 import (
@@ -9,6 +14,10 @@ import (
 )
 
 func TestMath(t *testing.T) {
+	// Table-driven test with an anonymous struct slice (`[]struct{ in, want string }{ ... }`):
+	//   Go allows defining a one-off struct type inline and immediately
+	//   populating a slice literal of test cases without declaring a named
+	//   helper class/record.
 	tests := []struct {
 		in, want string
 	}{

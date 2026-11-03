@@ -1,3 +1,7 @@
+// File responsibilities (pdf.go):
+//   - Drives headless Chrome (or Chromium/Edge/Brave) to print rendered HTML
+//     pages to PDF with document outlines, and queries OS-specific settings to
+//     detect dark mode when `--theme=auto`.
 package main
 
 import (
@@ -46,6 +50,9 @@ func printPDF(page []byte, pdfName string) error {
 	if err != nil {
 		return err
 	}
+	// Idiomatic Go resource cleanup: register `defer os.RemoveAll(dir)` right
+	// after creating the temp directory so every early return path below
+	// automatically cleans it up.
 	defer os.RemoveAll(dir)
 
 	htmlName := filepath.Join(dir, "page.html")
@@ -55,6 +62,15 @@ func printPDF(page []byte, pdfName string) error {
 	pageURL := url.URL{Scheme: "file", Path: filepath.ToSlash(htmlName)}
 	tempPDF := filepath.Join(dir, "page.pdf")
 
+	// Go idiom (`context.WithTimeout` + `defer cancel()`):
+	//   `context.Context` is Go's standard mechanism for propagating timeouts
+	//   and cancellation across goroutines, network calls, and child processes.
+	//   `WithTimeout` returns a derived Context that automatically cancels
+	//   after 1 minute, plus a `cancel` function. Always `defer cancel()` so
+	//   the internal timer is released immediately when `printPDF` finishes in
+	//   <1s rather than leaking until the 1-minute deadline expires.
+	//   Passing `ctx` to `exec.CommandContext` kills the Chrome process if the
+	//   timeout is reached.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, chrome,
@@ -73,6 +89,10 @@ func printPDF(page []byte, pdfName string) error {
 		pageURL.String(),
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
+		// Error wrapping (`%w`): unlike `%v` or `%s`, the `%w` verb in
+		// `fmt.Errorf` wraps the original `err` inside the new error (like
+		// Java's `new Exception(message, cause)`), preserving it for callers
+		// that inspect errors with `errors.Is` or `errors.As`.
 		return fmt.Errorf("printing PDF with %s: %w\n%s", chrome, err, output)
 	}
 
@@ -99,7 +119,15 @@ func pdfTheme(th theme) theme {
 }
 
 // osPrefersDark reports whether the OS is set to dark mode, as far as can be
-// told; a variable so tests can stand in for the OS
+// told; a variable so tests can stand in for the OS.
+//
+// Go testing idiom (function variable as a seam):
+//   In Java, making `pdfTheme` testable without shelling out to the OS would
+//   typically require defining an `OSThemeDetector` interface, a production
+//   implementation class, and injecting a mock into `pdfTheme`. In Go, when
+//   there is only a single function to stub in tests, it's common to declare
+//   it as a package-level function variable (`var osPrefersDark = func() bool`)
+//   that tests can temporarily reassign (see `TestPDFTheme` in `main_test.go`).
 var osPrefersDark = func() bool {
 	var out []byte
 	var err error

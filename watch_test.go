@@ -1,3 +1,7 @@
+// File responsibilities (watch_test.go):
+//   - Tests the live-reload HTTP server (`watch.go`), verifying initial page
+//     rendering, error-page recovery, Server-Sent Events (SSE) reload notifications
+//     on file modification, and directory-scoped file serving.
 package main
 
 import (
@@ -31,6 +35,10 @@ func newTestWatcher(t *testing.T) *watcher {
 }
 
 func TestWatchServesPageWithReloadScript(t *testing.T) {
+	// `httptest.NewServer` starts an real HTTP server on a local ephemeral port.
+	// `t.Cleanup(srv.Close)` registers `srv.Close` to run when the test finishes
+	// (like `defer`, but scoped to the test `t` so it can also be registered inside
+	// helper functions like `eventLines` below without closing before the helper returns).
 	srv := httptest.NewServer(newTestWatcher(t).handler())
 	t.Cleanup(srv.Close)
 
@@ -76,7 +84,12 @@ func TestWatchShowsErrorPageThatStillReloads(t *testing.T) {
 }
 
 // eventLines streams the lines of the server's events for the file at
-// urlPath until the test ends
+// urlPath until the test ends.
+//
+// Go channel direction (`<-chan string`):
+//   `chan string` is a bidirectional channel, while `<-chan string` in the
+//   return signature restricts callers to *receiving* (`<-lines`)—the compiler
+//   prevents callers from accidentally sending to or closing `lines`.
 func eventLines(t *testing.T, srvURL, urlPath string) <-chan string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +104,8 @@ func eventLines(t *testing.T, srvURL, urlPath string) <-chan string {
 		t.Fatal(err)
 	}
 
+	// `make(chan string)` creates an unbuffered channel: each send (`lines <- ...`)
+	// in the background goroutine blocks until the test goroutine receives (`<-lines`).
 	lines := make(chan string)
 	go func() {
 		defer resp.Body.Close()
@@ -98,6 +113,8 @@ func eventLines(t *testing.T, srvURL, urlPath string) <-chan string {
 		for {
 			line, err := r.ReadString('\n')
 			if err != nil {
+				// Closing the channel signals to receivers that no more values
+				// will be sent (`line, ok := <-lines` yields `ok == false`).
 				close(lines)
 				return
 			}
@@ -115,6 +132,8 @@ func expectReload(t *testing.T, lines <-chan string, file string) {
 		t.Fatalf("first line = %q, want the connected comment", line)
 	}
 
+	// `time.After(d)` returns a channel (`<-chan time.Time`) that receives a
+	// value after duration `d`, making timeouts a natural case inside `select`.
 	select {
 	case line := <-lines:
 		if line == "data: reload" {

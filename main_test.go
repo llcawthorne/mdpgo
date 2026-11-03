@@ -1,3 +1,7 @@
+// File responsibilities (main_test.go):
+//   - Integration and unit tests for CLI flags (`run`), HTML/PDF generation,
+//     custom templates, theme and syntax style selection, image embedding,
+//     and GitHub heading slug generation.
 package main
 
 import (
@@ -555,6 +559,10 @@ func TestSlug(t *testing.T) {
 }
 
 func TestPDFTheme(t *testing.T) {
+	// `defer` evaluates its function arguments *immediately* when the `defer`
+	// statement executes, not when the surrounding function returns. Passing
+	// `(osPrefersDark)` as an argument snapshots the original function pointer
+	// now and restores `osPrefersDark = f` when `TestPDFTheme` exits.
 	defer func(f func() bool) { osPrefersDark = f }(osPrefersDark)
 
 	for _, tc := range []struct {

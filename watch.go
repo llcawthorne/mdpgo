@@ -1,3 +1,7 @@
+// File responsibilities (watch.go):
+//   - Serves a live-reloading local HTTP preview of a Markdown file and its
+//     directory, streaming Server-Sent Events (SSE) on `/events` whenever a
+//     watched file's modification time or size changes.
 package main
 
 import (
@@ -17,6 +21,10 @@ import (
 // pollInterval is how often watch mode checks a file for changes. Polling
 // rather than filesystem events copes with editors like Neovim that save by
 // writing a new file and renaming it over the old one.
+//
+// `time.Duration` is a defined type (`type Duration int64`) representing
+// nanoseconds; multiplying an untyped integer constant like `250` by
+// `time.Millisecond` produces a typed `time.Duration` at compile time.
 const pollInterval = 250 * time.Millisecond
 
 // reloadScript makes a page reload when the server reports its file changed.
@@ -38,6 +46,12 @@ type watcher struct {
 // newWatcher creates a watcher rooted in the directory of filename.
 // opts.served is enabled so relative links between markdown files are left
 // for the server to resolve rather than converted to absolute file:// URLs.
+//
+// Go constructor convention (`newThing`):
+//   Go has no special constructor syntax; constructors are ordinary functions
+//   named `newX` (or `NewX` if exported). Note how `opts` is passed by value,
+//   so `opts.served = true` mutates the local copy without affecting the
+//   caller's `options` struct.
 func newWatcher(filename string, opts options) *watcher {
 	opts.served = true
 	return &watcher{
@@ -64,7 +78,13 @@ func serve(filename string, opts options, out io.Writer, skipPreview bool) error
 	url := "http://" + ln.Addr().String() + "/"
 	fmt.Fprintln(out, url)
 
-	// Launch preview in a separate goroutine so it opens while http.Serve blocks below
+	// Go vs. Java note on Goroutines (`go func() { ... }()`):
+	//   Prefixing a function call with `go` spawns a goroutine—a lightweight
+	//   green thread managed by the Go runtime (starting with only a ~2KB
+	//   growable stack, similar to Java 21 virtual threads). Because
+	//   `http.Serve` below blocks forever serving HTTP requests, launching
+	//   `preview(url)` in a goroutine lets the browser open concurrently
+	//   while the server starts accepting connections.
 	if !skipPreview {
 		go func() {
 			if err := preview(url); err != nil {
@@ -73,10 +93,23 @@ func serve(filename string, opts options, out io.Writer, skipPreview bool) error
 		}()
 	}
 
+	// Note that `net/http` automatically handles each incoming HTTP request
+	// in its own goroutine, so a long-lived `/events` SSE request never blocks
+	// `/` page or asset requests.
 	return http.Serve(ln, newWatcher(filename, opts).handler())
 }
 
-// handler returns an http.Handler that routes /events for SSE and / for page serving
+// handler returns an http.Handler that routes /events for SSE and / for page serving.
+//
+// Go note on `http.Handler`, method values (`w.serveEvents`), and ServeMux:
+//   - `http.Handler` is Go's core HTTP interface (`ServeHTTP(ResponseWriter, *Request)`),
+//     analogous to a Java Servlet.
+//   - `w.serveEvents` is a **method value**: binding method `serveEvents` to
+//     receiver `w` yields a `func(http.ResponseWriter, *http.Request)` closure
+//     (just like Java's `this::serveEvents` method reference).
+//   - Go 1.22+ `http.ServeMux` supports method-prefixed patterns (`"GET /events"`).
+//     `"GET /"` is a subtree pattern that matches `/` and any path not matched
+//     by a more specific pattern.
 func (w *watcher) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /events", w.serveEvents)
@@ -85,7 +118,12 @@ func (w *watcher) handler() http.Handler {
 }
 
 // resolve maps a URL path to a file: / is the previewed file, and anything
-// else is in its folder; cleaning the path keeps it there
+// else is in its folder; cleaning the path keeps it there.
+//
+// Security note: prepending `"/"` before `path.Clean("/"+urlPath)` ensures any
+// `".."` segments cannot climb above `/` (e.g., `path.Clean("/../../etc/passwd")`
+// collapses to `"/etc/passwd"`), so `filepath.Join(w.root, ...)` stays safely
+// inside `w.root`.
 func (w *watcher) resolve(urlPath string) string {
 	if urlPath == "" || urlPath == "/" {
 		return w.filename
@@ -148,6 +186,14 @@ func injectScript(page []byte) []byte {
 // ?path= URL path changes: its modification time or size.
 // http.Flusher pushes chunks immediately down the open connection.
 func (w *watcher) serveEvents(rw http.ResponseWriter, r *http.Request) {
+	// Go idiom (optional capability interface via type assertion):
+	//   `rw` has static interface type `http.ResponseWriter`, which only has
+	//   `Header()`, `Write()`, and `WriteHeader()`. To keep `ResponseWriter`
+	//   minimal, optional transport features like flushing buffered bytes for
+	//   Server-Sent Events are defined on a separate 1-method interface:
+	//       type Flusher interface { Flush() }
+	//   `flusher, ok := rw.(http.Flusher)` checks at runtime whether the
+	//   concrete `ResponseWriter` implementation also satisfies `http.Flusher`.
 	flusher, ok := rw.(http.Flusher)
 	if !ok {
 		http.Error(rw, "streaming unsupported", http.StatusInternalServerError)
@@ -165,6 +211,13 @@ func (w *watcher) serveEvents(rw http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
 	for {
+		// Go concurrency idiom (`select` over channels):
+		//   `select` blocks until one of its channel cases is ready:
+		//     - `<-r.Context().Done()`: the request context's `Done()` channel
+		//       is closed by `net/http` as soon as the browser tab closes or
+		//       reloads, cleanly exiting this infinite loop and running
+		//       `defer ticker.Stop()`.
+		//     - `<-ticker.C`: receives a timestamp every `w.interval` (250ms).
 		select {
 		case <-r.Context().Done():
 			return

@@ -1,7 +1,10 @@
+// File responsibilities (github.go):
+//   - Custom Goldmark extensions for GitHub-specific Markdown features that
+//     Goldmark doesn't provide out of the box: inline/display LaTeX math
+//     ($...$, $$...$$, $`...`$), fenced ```math and ```mermaid blocks,
+//     blockquote alerts (> [!NOTE]), raw HTML tag filtering (<script>, etc.),
+//     and rendering YAML front matter as a table.
 package main
-
-// GitHub's additions to Markdown that goldmark doesn't have: math, alerts,
-// Mermaid diagrams, front matter tables, and its filtering of raw HTML tags
 
 import (
 	"bytes"
@@ -19,10 +22,16 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// githubExtras adds math and the blocks for math and Mermaid diagrams
+// githubExtras adds math and the blocks for math and Mermaid diagrams.
+//
+// `struct{}` is a zero-size type (0 bytes in memory). Attaching methods to it
+// lets `githubExtras` implicitly satisfy `goldmark.Extender` with zero allocation.
 type githubExtras struct{}
 
 // Extend implements goldmark.Extender to register math parsers, block transformers, and renderers.
+//
+// Because `githubExtras` has no fields and `Extend` doesn't reference the
+// receiver, Go lets you omit the receiver variable name and write `(githubExtras)`.
 func (githubExtras) Extend(m goldmark.Markdown) {
 	m.Parser().AddOptions(
 		parser.WithInlineParsers(util.Prioritized(mathParser{}, 150)),
@@ -41,7 +50,17 @@ var (
 	kindMermaid   = ast.NewNodeKind("Mermaid")
 )
 
-// mathNode is TeX inside a paragraph: $inline$, $`inline`$, or $$display$$
+// mathNode is TeX inside a paragraph: $inline$, $`inline`$, or $$display$$.
+//
+// Go struct embedding (`ast.BaseInline`):
+//   Listing `ast.BaseInline` by type name alone (no field name) embeds it into
+//   `mathNode`. All of `BaseInline`'s fields and ~25 `ast.Node` tree-navigation
+//   methods (`Parent`, `NextSibling`, `FirstChild`, etc.) are automatically
+//   promoted to `mathNode`, so `*mathNode` satisfies `ast.Node` while only
+//   needing to define `Kind()` and `Dump()`.
+//   Unlike Java `extends`, embedding is composition rather than subtyping:
+//   `*mathNode` is not a subtype of `*ast.BaseInline`, and polymorphism happens
+//   through the `ast.Node` interface.
 type mathNode struct {
 	ast.BaseInline
 	tex     []byte
@@ -49,6 +68,9 @@ type mathNode struct {
 }
 
 // Kind implements ast.Node.
+// Pointer receiver `(n *mathNode)` is used because the promoted tree-mutation
+// methods on `ast.BaseInline` have pointer receivers, so `*mathNode` (not value
+// `mathNode`) is the type that satisfies `ast.Node`.
 func (n *mathNode) Kind() ast.NodeKind { return kindMath }
 
 // Dump implements ast.Node for debugging the syntax tree.
@@ -57,7 +79,11 @@ func (n *mathNode) Dump(source []byte, level int) {
 }
 
 // rawBlock is a fenced code block that's rendered, not shown: ```math or
-// ```mermaid
+// ```mermaid.
+//
+// Like `mathNode` above, `rawBlock` embeds `ast.BaseBlock` (Goldmark's base
+// struct for block-level AST nodes) so all block-level `ast.Node` methods are
+// promoted onto `*rawBlock`.
 type rawBlock struct {
 	ast.BaseBlock
 	kind ast.NodeKind
@@ -77,6 +103,8 @@ func (n *rawBlock) Dump(source []byte, level int) {
 // non-space before it and no digit after it, so "$5 and $10" stays text.
 // $$display$$ and $`inline`$ have no such rules, and display math can run
 // over lines in a paragraph.
+//
+// Implicitly satisfies Goldmark's `parser.InlineParser` interface (`Trigger` + `Parse`).
 type mathParser struct{}
 
 // Trigger returns the bytes that start a potential math span.
@@ -108,6 +136,7 @@ func (mathParser) Parse(parent ast.Node, block text.Reader, pc parser.Context) a
 			return nil
 		}
 		if end := closingDelim(line, close, open == "$"); end >= 0 {
+			// `line[:end]...` unpacks the slice as variadic byte arguments to `append`.
 			tex = append(tex, line[:end]...)
 			block.Advance(end + len(close))
 			break
@@ -156,7 +185,9 @@ func closingDelim(line []byte, close string, strict bool) int {
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
 // specialBlocks turns ```math and ```mermaid code blocks into blocks that are
-// rendered in the page, as GitHub does
+// rendered in the page, as GitHub does.
+//
+// Implicitly satisfies Goldmark's `parser.ASTTransformer` interface.
 type specialBlocks struct{}
 
 // Transform implements parser.ASTTransformer, collecting math and mermaid code
@@ -180,6 +211,8 @@ func (specialBlocks) Transform(doc *ast.Document, reader text.Reader, pc parser.
 		if string(code.Language(source)) == "mermaid" {
 			block.kind = kindMermaid
 		}
+		// Go 1.22+ supports ranging directly over an integer:
+		// `for i := range N` iterates `i` from 0 to N-1.
 		for i := range code.Lines().Len() {
 			line := code.Lines().At(i)
 			block.text = append(block.text, line.Value(source)...)
@@ -201,7 +234,9 @@ var alertTypes = map[string]string{
 var alertMarker = regexp.MustCompile(`^\[!([A-Za-z]+)\]$`)
 
 // alerts turns blockquotes that start with an alert marker into alerts: the
-// marker becomes a title, and a class gives the alert its color and icon
+// marker becomes a title, and a class gives the alert its color and icon.
+//
+// Implicitly satisfies Goldmark's `parser.ASTTransformer` interface.
 type alerts struct{}
 
 // Transform implements parser.ASTTransformer, rewriting blockquotes that start
@@ -223,6 +258,8 @@ func (alerts) Transform(doc *ast.Document, reader text.Reader, pc parser.Context
 			return ast.WalkContinue, nil
 		}
 		kind := strings.ToUpper(string(m[1]))
+		// "Comma-ok" map lookup: `ok` is false if `kind` is not in the map
+		// (as opposed to a single-value lookup, which returns `""` either way).
 		title, ok := alertTypes[kind]
 		if !ok {
 			return ast.WalkContinue, nil
@@ -252,14 +289,21 @@ func (alerts) Transform(doc *ast.Document, reader text.Reader, pc parser.Context
 }
 
 // extrasRenderer writes math and Mermaid as escaped text in elements the
-// page's scripts find and render
+// page's scripts find and render.
+//
+// Implicitly satisfies Goldmark's `renderer.NodeRenderer` interface.
 type extrasRenderer struct{}
 
 // RegisterFuncs implements renderer.NodeRenderer, registering HTML writers for
 // math and Mermaid AST nodes.
 func (extrasRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	// Notice `_ []byte` in the callback signature: the blank identifier `_`
+	// discards an interface-required parameter (`source []byte`) that this
+	// function doesn't use, keeping the compiler happy.
 	reg.Register(kindMath, func(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
+			// Unchecked type assertion `n.(*mathNode)`: safe here because this
+			// callback is registered exclusively for `kindMath` nodes.
 			m := n.(*mathNode)
 			class := "math math-inline"
 			if m.display {
@@ -284,7 +328,12 @@ func (extrasRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 }
 
 // usesKinds reports whether doc has math, and whether it has Mermaid
-// diagrams, so the page only carries the scripts it needs
+// diagrams, so the page only carries the scripts it needs.
+//
+// Go note on named return parameters `(math, mermaid bool)`:
+//   Declaring names on the return types initializes local variables `math` and
+//   `mermaid` to their zero value (`false`). The closure inside `ast.Walk`
+//   mutates them directly, and `return math, mermaid` returns the final flags.
 func usesKinds(doc ast.Node) (math, mermaid bool) {
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		switch n.Kind() {
@@ -328,7 +377,10 @@ func frontMatterTable(items yaml.MapSlice) string {
 }
 
 // frontMatterValue renders a front matter YAML value to an HTML string,
-// recursively formatting nested maps and lists as tables
+// recursively formatting nested maps and lists as tables.
+//
+// `any` is a built-in alias for `interface{}` (the empty interface satisfied by
+// every Go type, including primitives).
 func frontMatterValue(v any) string {
 	switch v := v.(type) {
 	case yaml.MapSlice:

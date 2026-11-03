@@ -1,3 +1,8 @@
+// File responsibilities (links.go):
+//   - Streams through sanitized HTML using an HTML tokenizer to embed local
+//     images (`<img src>` and `<source srcset>`) as base64 data URIs, tag
+//     GitHub's `#gh-dark-mode-only` / `#gh-light-mode-only` images, and
+//     rewrite relative links to `file://` URLs when not in watch mode.
 package main
 
 import (
@@ -27,6 +32,8 @@ func fixLinks(page []byte, dir string, served bool) []byte {
 	z := html.NewTokenizer(bytes.NewReader(page))
 	for {
 		tt := z.Next()
+		// html.Tokenizer returns `html.ErrorToken` both on malformed input and
+		// on normal end-of-stream (`io.EOF`).
 		if tt == html.ErrorToken {
 			return out.Bytes()
 		}
@@ -37,6 +44,10 @@ func fixLinks(page []byte, dir string, served bool) []byte {
 
 		tok := z.Token()
 		changed := false
+		// `tok.Attr` is a slice of structs (`[]html.Attribute`), not pointers.
+		// In `for i, attr := range tok.Attr`, `attr` is a value copy of the
+		// struct at index `i`, so mutating the slice element requires indexing
+		// directly (`tok.Attr[i].Val = value` below).
 		for i, attr := range tok.Attr {
 			var value string
 			switch {
@@ -77,12 +88,21 @@ func modeOnly(src string) string {
 }
 
 // localPath returns the file a relative or absolute path URL points to, and
-// whether it is one, rather than a URL with a scheme or host, or a #fragment
+// whether it is one, rather than a URL with a scheme or host, or a #fragment.
+//
+// Go idiom (the `, ok` boolean return pattern):
+//   Rather than returning `null` or `Optional<LocalPath>` like in Java, Go
+//   functions that may or may not match return their result values alongside a
+//   trailing `ok bool`. Callers check `if !ok { ... }`.
 func localPath(ref, dir string) (path string, u *url.URL, ok bool) {
 	u, err := url.Parse(ref)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" {
 		return "", nil, false
 	}
+	// filepath.FromSlash converts '/' in URLs to the OS file separator ('\' on
+	// Windows, no-op on Unix); filepath.ToSlash in absoluteLink below does the
+	// reverse. Note how Go separates `path` (always '/' for URLs) from
+	// `path/filepath` (OS-aware filesystem paths).
 	path = filepath.FromSlash(u.Path)
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(dir, path)
@@ -109,6 +129,9 @@ func embedImage(src, dir string) string {
 	if mimeType == "" {
 		mimeType = http.DetectContentType(data)
 	}
+	// strings.Cut(s, sep) splits `s` around the first instance of `sep`,
+	// returning `(before, after, found)`. If ";" isn't present, `before` is the
+	// entire string `mimeType`.
 	mimeType, _, _ = strings.Cut(mimeType, ";")
 
 	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
@@ -143,6 +166,8 @@ func absoluteLink(href, dir string) string {
 	if strings.HasSuffix(u.Path, "/") {
 		slashed += "/" // a folder, which Join's cleaning drops the slash of
 	}
+	// Struct literal with named fields: any omitted fields (`Host`, `User`,
+	// `Opaque`, etc.) automatically default to their zero values (`""` / `nil`).
 	abs := url.URL{Scheme: "file", Path: slashed, RawQuery: u.RawQuery, Fragment: u.Fragment}
 	return abs.String()
 }

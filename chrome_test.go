@@ -1,3 +1,7 @@
+// File responsibilities (chrome_test.go):
+//   - End-to-end headless Chrome tests verifying that client-side KaTeX and
+//     Mermaid JavaScript execute and render formulas and diagrams in the DOM
+//     without errors.
 package main
 
 import (
@@ -19,6 +23,8 @@ func TestRendersInChrome(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
+	// `testing.Short()` is true when `go test -short` is passed on the command
+	// line, letting slow integration tests opt out during fast test runs.
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
@@ -84,7 +90,11 @@ func TestRendersInChrome(t *testing.T) {
 // dumpDOM loads page in headless Chrome and returns the document as its
 // scripts leave it
 func dumpDOM(t *testing.T, chrome string, page []byte) string {
+	// `t.Helper()` marks this function as a test helper so any `t.Fatal` inside
+	// it reports the file and line number of the *caller* in test failure output.
 	t.Helper()
+	// `t.TempDir()` creates a unique temporary directory that `testing`
+	// automatically removes when the test (and all its subtests) complete.
 	dir := t.TempDir()
 	name := filepath.Join(dir, "page.html")
 	if err := os.WriteFile(name, page, 0644); err != nil {
