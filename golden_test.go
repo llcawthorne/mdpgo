@@ -5,11 +5,12 @@
 //     expected outputs.
 //
 // Go vs. Java note on `*_test.go` files:
-//   Files ending in `_test.go` are compiled ONLY by `go test` and are completely
-//   excluded from production builds (`go build` / `go install`), even though
-//   they live in the same directory and share `package main` (giving them direct
-//   access to unexported functions like `parseContent`). Likewise, the Go tool
-//   ignores any directory named `testdata`.
+//
+//	Files ending in `_test.go` are compiled ONLY by `go test` and are completely
+//	excluded from production builds (`go build` / `go install`), even though
+//	they live in the same directory and share `package main` (giving them direct
+//	access to unexported functions like `parseContent`). Likewise, the Go tool
+//	ignores any directory named `testdata`.
 package main
 
 import (
@@ -28,10 +29,11 @@ import (
 // Then read the diff before committing it.
 //
 // Go testing idiom (custom CLI flags in tests):
-//   Because `go test` compiles a standalone test binary that uses the standard
-//   library `flag` package for its own flags, registering `flag.Bool("update", ...)`
-//   in a test file automatically adds `-update` to `go test`! Note that
-//   `flag.Bool` returns a pointer (`*bool`), dereferenced below as `*update`.
+//
+//	Because `go test` compiles a standalone test binary that uses the standard
+//	library `flag` package for its own flags, registering `flag.Bool("update", ...)`
+//	in a test file automatically adds `-update` to `go test`! Note that
+//	`flag.Bool` returns a pointer (`*bool`), dereferenced below as `*update`.
 var update = flag.Bool("update", false, "rewrite golden files from current output")
 
 // TestGolden renders each testdata/golden/*.md and compares the parts that

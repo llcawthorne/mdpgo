@@ -167,17 +167,23 @@ func run(cfg config, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err := temp.Close(); err != nil {
+		outName = temp.Name()
+		if _, err := temp.Write(htmlData); err != nil {
+			temp.Close()
+			os.Remove(outName)
 			return err
 		}
-		outName = temp.Name()
+		if err := temp.Close(); err != nil {
+			os.Remove(outName)
+			return err
+		}
+	} else {
+		if err := os.WriteFile(outName, htmlData, 0644); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintln(out, outName)
-
-	if err := os.WriteFile(outName, htmlData, 0644); err != nil {
-		return err
-	}
 
 	if cfg.skipPreview {
 		return nil

@@ -98,11 +98,20 @@ func printPDF(page []byte, pdfName string) error {
 
 	// Chrome can exit cleanly without printing, so check it did; and only
 	// replace any existing PDF once there's a new one
-	pdf, err := os.ReadFile(tempPDF)
+	src, err := os.Open(tempPDF)
 	if err != nil {
 		return fmt.Errorf("printing PDF with %s: no PDF written", chrome)
 	}
-	return os.WriteFile(pdfName, pdf, 0644)
+	defer src.Close()
+
+	dst, err := os.OpenFile(pdfName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	return err
 }
 
 // pdfTheme picks a PDF's colors: those asked for, or else the OS's, since
@@ -122,12 +131,13 @@ func pdfTheme(th theme) theme {
 // told; a variable so tests can stand in for the OS.
 //
 // Go testing idiom (function variable as a seam):
-//   In Java, making `pdfTheme` testable without shelling out to the OS would
-//   typically require defining an `OSThemeDetector` interface, a production
-//   implementation class, and injecting a mock into `pdfTheme`. In Go, when
-//   there is only a single function to stub in tests, it's common to declare
-//   it as a package-level function variable (`var osPrefersDark = func() bool`)
-//   that tests can temporarily reassign (see `TestPDFTheme` in `main_test.go`).
+//
+//	In Java, making `pdfTheme` testable without shelling out to the OS would
+//	typically require defining an `OSThemeDetector` interface, a production
+//	implementation class, and injecting a mock into `pdfTheme`. In Go, when
+//	there is only a single function to stub in tests, it's common to declare
+//	it as a package-level function variable (`var osPrefersDark = func() bool`)
+//	that tests can temporarily reassign (see `TestPDFTheme` in `main_test.go`).
 var osPrefersDark = func() bool {
 	var out []byte
 	var err error

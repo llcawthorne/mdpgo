@@ -53,14 +53,15 @@ var (
 // mathNode is TeX inside a paragraph: $inline$, $`inline`$, or $$display$$.
 //
 // Go struct embedding (`ast.BaseInline`):
-//   Listing `ast.BaseInline` by type name alone (no field name) embeds it into
-//   `mathNode`. All of `BaseInline`'s fields and ~25 `ast.Node` tree-navigation
-//   methods (`Parent`, `NextSibling`, `FirstChild`, etc.) are automatically
-//   promoted to `mathNode`, so `*mathNode` satisfies `ast.Node` while only
-//   needing to define `Kind()` and `Dump()`.
-//   Unlike Java `extends`, embedding is composition rather than subtyping:
-//   `*mathNode` is not a subtype of `*ast.BaseInline`, and polymorphism happens
-//   through the `ast.Node` interface.
+//
+//	Listing `ast.BaseInline` by type name alone (no field name) embeds it into
+//	`mathNode`. All of `BaseInline`'s fields and ~25 `ast.Node` tree-navigation
+//	methods (`Parent`, `NextSibling`, `FirstChild`, etc.) are automatically
+//	promoted to `mathNode`, so `*mathNode` satisfies `ast.Node` while only
+//	needing to define `Kind()` and `Dump()`.
+//	Unlike Java `extends`, embedding is composition rather than subtyping:
+//	`*mathNode` is not a subtype of `*ast.BaseInline`, and polymorphism happens
+//	through the `ast.Node` interface.
 type mathNode struct {
 	ast.BaseInline
 	tex     []byte
@@ -331,9 +332,10 @@ func (extrasRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 // diagrams, so the page only carries the scripts it needs.
 //
 // Go note on named return parameters `(math, mermaid bool)`:
-//   Declaring names on the return types initializes local variables `math` and
-//   `mermaid` to their zero value (`false`). The closure inside `ast.Walk`
-//   mutates them directly, and `return math, mermaid` returns the final flags.
+//
+//	Declaring names on the return types initializes local variables `math` and
+//	`mermaid` to their zero value (`false`). The closure inside `ast.Walk`
+//	mutates them directly, and `return math, mermaid` returns the final flags.
 func usesKinds(doc ast.Node) (math, mermaid bool) {
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		switch n.Kind() {

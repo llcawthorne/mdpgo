@@ -17,12 +17,13 @@ import (
 // when they have math or diagrams.
 //
 // Go vs. Java note on `embed.FS`:
-//   While `//go:embed` on a `string` embeds a single file, applying one or
-//   more `//go:embed` directives (including globs like `*.woff2`) to an
-//   `embed.FS` variable embeds an entire read-only virtual file tree directly
-//   into the binary (similar to bundling resources inside a Java fat JAR,
-//   except verified at compile time and accessed via a standard `io/fs.FS`
-//   filesystem API).
+//
+//	While `//go:embed` on a `string` embeds a single file, applying one or
+//	more `//go:embed` directives (including globs like `*.woff2`) to an
+//	`embed.FS` variable embeds an entire read-only virtual file tree directly
+//	into the binary (similar to bundling resources inside a Java fat JAR,
+//	except verified at compile time and accessed via a standard `io/fs.FS`
+//	filesystem API).
 //
 //go:embed assets/katex/katex.min.js assets/katex/katex.min.css assets/katex/fonts/*.woff2
 //go:embed assets/mermaid/mermaid.min.js
@@ -54,13 +55,14 @@ var katexFont = regexp.MustCompile(`url\(fonts/(KaTeX_[\w-]+)\.woff2\) format\("
 // without CORS or file:// font loading restrictions.
 //
 // Go idiom (`sync.OnceValue`):
-//   `sync.OnceValue` (added in Go 1.21 using generics: `func OnceValue[T any](f func() T) func() T`)
-//   wraps an initialization closure and returns a thread-safe getter function
-//   `func() template.CSS`. Unlike a package-level IIFE (`func() ... {}()`),
-//   which runs eagerly at program startup even if the markdown file has no
-//   math, `sync.OnceValue` defers base64-encoding the 20 font files until the
-//   first page that actually uses math, then caches the result forever
-//   (like Guava's `Suppliers.memoize` or Java's lazy holder idiom).
+//
+//	`sync.OnceValue` (added in Go 1.21 using generics: `func OnceValue[T any](f func() T) func() T`)
+//	wraps an initialization closure and returns a thread-safe getter function
+//	`func() template.CSS`. Unlike a package-level IIFE (`func() ... {}()`),
+//	which runs eagerly at program startup even if the markdown file has no
+//	math, `sync.OnceValue` defers base64-encoding the 20 font files until the
+//	first page that actually uses math, then caches the result forever
+//	(like Guava's `Suppliers.memoize` or Java's lazy holder idiom).
 var katexCSS = sync.OnceValue(func() template.CSS {
 	css := katexFont.ReplaceAllStringFunc(asset("katex/katex.min.css"), func(m string) string {
 		name := katexFont.FindStringSubmatch(m)[1]

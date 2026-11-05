@@ -91,9 +91,10 @@ func modeOnly(src string) string {
 // whether it is one, rather than a URL with a scheme or host, or a #fragment.
 //
 // Go idiom (the `, ok` boolean return pattern):
-//   Rather than returning `null` or `Optional<LocalPath>` like in Java, Go
-//   functions that may or may not match return their result values alongside a
-//   trailing `ok bool`. Callers check `if !ok { ... }`.
+//
+//	Rather than returning `null` or `Optional<LocalPath>` like in Java, Go
+//	functions that may or may not match return their result values alongside a
+//	trailing `ok bool`. Callers check `if !ok { ... }`.
 func localPath(ref, dir string) (path string, u *url.URL, ok bool) {
 	u, err := url.Parse(ref)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" {

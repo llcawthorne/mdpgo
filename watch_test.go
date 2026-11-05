@@ -87,9 +87,10 @@ func TestWatchShowsErrorPageThatStillReloads(t *testing.T) {
 // urlPath until the test ends.
 //
 // Go channel direction (`<-chan string`):
-//   `chan string` is a bidirectional channel, while `<-chan string` in the
-//   return signature restricts callers to *receiving* (`<-lines`)—the compiler
-//   prevents callers from accidentally sending to or closing `lines`.
+//
+//	`chan string` is a bidirectional channel, while `<-chan string` in the
+//	return signature restricts callers to *receiving* (`<-lines`)—the compiler
+//	prevents callers from accidentally sending to or closing `lines`.
 func eventLines(t *testing.T, srvURL, urlPath string) <-chan string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

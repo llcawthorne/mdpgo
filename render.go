@@ -55,12 +55,12 @@ type options struct {
 // content represents the template data model passed to page.html.tmpl or an alternate template.
 //
 // Two Go-specific details here:
-//   1. Fields are Uppercase (exported) even though `content` is lowercase:
-//      `html/template` reads struct fields via reflection, and Go's `reflect`
-//      package refuses to read unexported fields across package boundaries.
-//   2. `template.CSS`, `template.HTML`, and `template.JS` are distinct defined
-//      types (`type HTML string`) in `html/template` that mark pre-sanitized
-//      strings as trusted so the template engine doesn't auto-escape them again.
+//  1. Fields are Uppercase (exported) even though `content` is lowercase:
+//     `html/template` reads struct fields via reflection, and Go's `reflect`
+//     package refuses to read unexported fields across package boundaries.
+//  2. `template.CSS`, `template.HTML`, and `template.JS` are distinct defined
+//     types (`type HTML string`) in `html/template` that mark pre-sanitized
+//     strings as trusted so the template engine doesn't auto-escape them again.
 type content struct {
 	Title     string
 	Theme     theme // starting colors: auto, light, or dark

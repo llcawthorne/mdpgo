@@ -48,10 +48,11 @@ type watcher struct {
 // for the server to resolve rather than converted to absolute file:// URLs.
 //
 // Go constructor convention (`newThing`):
-//   Go has no special constructor syntax; constructors are ordinary functions
-//   named `newX` (or `NewX` if exported). Note how `opts` is passed by value,
-//   so `opts.served = true` mutates the local copy without affecting the
-//   caller's `options` struct.
+//
+//	Go has no special constructor syntax; constructors are ordinary functions
+//	named `newX` (or `NewX` if exported). Note how `opts` is passed by value,
+//	so `opts.served = true` mutates the local copy without affecting the
+//	caller's `options` struct.
 func newWatcher(filename string, opts options) *watcher {
 	opts.served = true
 	return &watcher{

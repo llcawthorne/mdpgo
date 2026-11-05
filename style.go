@@ -35,9 +35,10 @@ var (
 // top bar's button switches them.
 //
 // Go enum idiom (`type theme string`):
-//   Go has no `enum` keyword. Declaring a distinct defined type (`type theme string`)
-//   paired with a `const` block prevents passing an arbitrary `string` variable
-//   where a `theme` is expected, while still storing a plain string at runtime.
+//
+//	Go has no `enum` keyword. Declaring a distinct defined type (`type theme string`)
+//	paired with a `const` block prevents passing an arbitrary `string` variable
+//	where a `theme` is expected, while still storing a plain string at runtime.
 type theme string
 
 const (
